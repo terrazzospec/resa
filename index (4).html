@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Reseplaneraren — Familjens roadtrip</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBGEXGTew8kXBixMQlEhvyljvMQUBiqOL0",
+    authDomain: "familjekalender-reis.firebaseapp.com",
+    databaseURL: "https://familjekalender-reis-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "familjekalender-reis",
+    storageBucket: "familjekalender-reis.firebasestorage.app",
+    messagingSenderId: "197443174169",
+    appId: "1:197443174169:web:3c0731c8b267f2b019cf88"
+  };
+</script>
+<style>
+  :root {
+    --asphalt: #1c2230;
+    --asphalt-soft: #262d3d;
+    --line: #f2c14e;      /* vägmarkeringsgul */
+    --line-dim: #b8912f;
+    --paper: #f5f1e8;
+    --paper-dim: #ded7c6;
+    --ink: #21252e;
+    --sky: #4a7ba6;
+    --charge: #43b581;    /* laddgrön */
+    --charge-dim: #2d7a55;
+    --bed: #c9736b;       /* hotell-tegel */
+    --star: #d99a3f;      /* spännande stopp */
+    --food: #b5844a;
+    --shadow: rgba(20,24,32,.28);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { overscroll-behavior-y:contain; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--asphalt);
+    color: var(--paper);
+    min-height:100vh;
+    padding-bottom: 90px;
+  }
+  .display { font-family: 'Arial Black', 'Segoe UI', sans-serif; letter-spacing:-.02em; }
+
+  /* ---- Topp ---- */
+  header {
+    position:sticky; top:0; z-index:40;
+    background: linear-gradient(180deg, var(--asphalt) 60%, rgba(28,34,48,.92));
+    padding: 18px 18px 12px;
+    border-bottom: 3px dashed var(--line);
+  }
+  .trip-title {
+    font-size: 1.5rem; font-weight:900; color:var(--line);
+    text-transform:uppercase; line-height:1;
+  }
+  .trip-title span { color:var(--paper); display:block; font-size:.72rem; letter-spacing:.28em; margin-top:6px; font-weight:600; }
+  .trip-meta { margin-top:10px; font-size:.8rem; color:var(--paper-dim); display:flex; gap:14px; flex-wrap:wrap; }
+  .trip-meta b { color:var(--line); }
+
+  /* ---- Dagflikar ---- */
+  .days-strip {
+    display:flex; gap:8px; overflow-x:auto; padding: 12px 18px 4px;
+    scrollbar-width:none; position:sticky; top:0; z-index:30;
+    background:var(--asphalt);
+  }
+  .days-strip::-webkit-scrollbar { display:none; }
+  .day-chip {
+    flex:0 0 auto; background:var(--asphalt-soft); border:1.5px solid #3a4155;
+    border-radius:14px; padding:8px 13px; min-width:64px; text-align:center;
+    cursor:pointer; transition:.15s;
+  }
+  .day-chip .dc-num { font-size:1.1rem; font-weight:900; color:var(--paper); line-height:1; }
+  .day-chip .dc-lbl { font-size:.58rem; text-transform:uppercase; letter-spacing:.1em; color:var(--paper-dim); margin-top:3px; }
+  .day-chip.active { background:var(--line); border-color:var(--line); }
+  .day-chip.active .dc-num, .day-chip.active .dc-lbl { color:var(--asphalt); }
+  .day-chip.add { border-style:dashed; color:var(--line); display:flex; align-items:center; justify-content:center; font-size:1.4rem; font-weight:700; min-width:48px; }
+
+  /* ---- Dagpanel ---- */
+  main { padding: 8px 16px 20px; }
+  .day-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin:14px 4px 4px; }
+  .day-head-l h2 { font-size:1.25rem; font-weight:900; color:var(--line); }
+  .day-head-l .day-date { font-size:.78rem; color:var(--paper-dim); margin-top:2px; }
+  .day-head-l input.dtitle {
+    font-size:1.2rem; font-weight:900; color:var(--line); background:transparent;
+    border:none; border-bottom:1px dashed var(--line-dim); width:100%; font-family:inherit;
+  }
+  .day-head-l input.ddate {
+    font-size:.78rem; color:var(--paper-dim); background:transparent; border:none;
+    border-bottom:1px dashed #3a4155; margin-top:4px; width:100%; font-family:inherit;
+  }
+  .icon-btn { background:var(--asphalt-soft); border:1px solid #3a4155; color:var(--paper-dim);
+    border-radius:9px; padding:6px 9px; font-size:.72rem; cursor:pointer; white-space:nowrap; }
+  .icon-btn.danger { color:var(--bed); border-color:var(--bed); }
+
+  /* ---- Tidslinje av stopp ---- */
+  .timeline { position:relative; margin: 10px 0 0 0; padding-left: 30px; }
+  .timeline::before {
+    content:''; position:absolute; left:11px; top:6px; bottom:26px; width:3px;
+    background: repeating-linear-gradient(var(--line) 0 10px, transparent 10px 20px);
+  }
+  .stop {
+    position:relative; background:var(--paper); color:var(--ink);
+    border-radius:14px; padding:12px 13px 12px 14px; margin-bottom:12px;
+    box-shadow: 0 4px 14px var(--shadow); cursor:pointer;
+  }
+  .stop::before {
+    content:''; position:absolute; left:-24px; top:16px; width:16px; height:16px;
+    border-radius:50%; background:var(--sky); border:3px solid var(--asphalt); z-index:2;
+  }
+  .stop.t-charge::before { background:var(--charge); }
+  .stop.t-hotel::before { background:var(--bed); }
+  .stop.t-sight::before { background:var(--star); }
+  .stop.t-food::before  { background:var(--food); }
+  .stop.t-drive::before { background:var(--sky); }
+
+  .stop-top { display:flex; align-items:center; gap:8px; }
+  .stop-badge {
+    font-size:.58rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em;
+    padding:3px 7px; border-radius:6px; color:#fff; flex:0 0 auto;
+  }
+  .b-charge { background:var(--charge-dim); }
+  .b-hotel  { background:var(--bed); }
+  .b-sight  { background:var(--star); }
+  .b-food   { background:var(--food); }
+  .b-drive  { background:var(--sky); }
+  .stop-time { font-size:.72rem; font-weight:800; color:#6a625020; }
+  .stop-time { color:#7a705a; margin-left:auto; font-weight:700; }
+  .stop-name { font-size:1.02rem; font-weight:800; margin-top:6px; line-height:1.2; }
+  .stop-note { font-size:.82rem; color:#4a463d; margin-top:4px; line-height:1.35; }
+  .stop-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .stop-tag { font-size:.66rem; background:var(--paper-dim); color:#5a5546; padding:2px 7px; border-radius:20px; font-weight:600; }
+  .stop-actions { display:flex; gap:6px; margin-top:10px; }
+  .stop-actions a, .stop-actions button {
+    font-size:.7rem; text-decoration:none; border:1px solid var(--paper-dim);
+    color:#5a5546; background:transparent; border-radius:8px; padding:5px 9px; cursor:pointer; font-family:inherit;
+  }
+  .stop-actions a.map { border-color:var(--sky); color:var(--sky); font-weight:700; }
+  .stop-move { display:flex; flex-direction:column; gap:4px; position:absolute; top:10px; right:10px; }
+  .move-btn { width:30px; height:26px; border:1px solid var(--paper-dim); background:#fff;
+    border-radius:7px; color:#7a705a; font-size:.8rem; cursor:pointer; line-height:1;
+    display:flex; align-items:center; justify-content:center; font-weight:800; }
+  .move-btn:disabled { opacity:.25; cursor:default; }
+  .stop { padding-right:50px; }
+
+  .day-empty { text-align:center; color:var(--paper-dim); font-size:.85rem; padding:24px 10px; }
+
+  /* ---- Kostnad/kWh på kort ---- */
+  .stop-stats { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
+  .stat-chip { font-size:.72rem; font-weight:800; padding:4px 9px; border-radius:8px; }
+  .stat-kwh  { background:#e3f3ea; color:var(--charge-dim); }
+  .stat-cost { background:#fbf0d8; color:#9a6a1a; }
+  .stat-rate { background:var(--paper-dim); color:#6a6252; font-weight:700; }
+
+  /* ---- Vy-växlare i header ---- */
+  .view-tabs { display:flex; gap:6px; margin-top:12px; }
+  .view-tab { flex:1; text-align:center; background:var(--asphalt-soft); border:1px solid #3a4155;
+    color:var(--paper-dim); border-radius:10px; padding:8px; font-size:.78rem; font-weight:800;
+    cursor:pointer; }
+  .view-tab.active { background:var(--line); color:var(--asphalt); border-color:var(--line); }
+
+  /* ---- Sammanställningssida ---- */
+  .summary-wrap { padding: 6px 16px 20px; }
+  .totals-hero { background:linear-gradient(135deg, var(--asphalt-soft), #2f3850);
+    border:1.5px solid var(--line-dim); border-radius:18px; padding:18px; margin:8px 0 18px; }
+  .totals-hero h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.18em; color:var(--line);
+    margin-bottom:14px; }
+  .totals-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .total-box { background:var(--asphalt); border-radius:13px; padding:13px; }
+  .total-box .tb-val { font-size:1.5rem; font-weight:900; color:var(--paper); line-height:1; }
+  .total-box .tb-val.accent { color:var(--line); }
+  .total-box .tb-val.green { color:var(--charge); }
+  .total-box .tb-lbl { font-size:.64rem; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--paper-dim); margin-top:6px; }
+
+  .cat-row { display:flex; justify-content:space-between; align-items:center;
+    background:var(--asphalt-soft); border:1px solid #3a4155; border-radius:11px;
+    padding:11px 14px; margin-bottom:8px; }
+  .cat-row .cr-l { display:flex; align-items:center; gap:9px; font-size:.86rem; font-weight:700; }
+  .cat-row .cr-dot { width:12px; height:12px; border-radius:50%; }
+  .cat-row .cr-val { font-size:.95rem; font-weight:900; color:var(--line); }
+  .cat-row .cr-sub { font-size:.66rem; color:var(--paper-dim); font-weight:600; }
+
+  .sum-section-title { font-size:.72rem; text-transform:uppercase; letter-spacing:.16em;
+    color:var(--line); margin:22px 4px 10px; font-weight:800; }
+
+  .sum-day { background:var(--paper); color:var(--ink); border-radius:14px; padding:13px 14px;
+    margin-bottom:11px; box-shadow:0 3px 12px var(--shadow); }
+  .sum-day-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:9px; }
+  .sum-day-head .sdh-title { font-size:1rem; font-weight:900; color:var(--ink); }
+  .sum-day-head .sdh-date { font-size:.7rem; color:#8a8272; }
+  .sum-day-total { text-align:right; }
+  .sum-day-total .sdt-cost { font-size:1.05rem; font-weight:900; color:#9a6a1a; }
+  .sum-day-total .sdt-kwh { font-size:.66rem; color:var(--charge-dim); font-weight:700; }
+  .sum-line { display:flex; justify-content:space-between; gap:8px; padding:6px 0;
+    border-top:1px solid var(--paper-dim); font-size:.82rem; }
+  .sum-line:first-of-type { border-top:none; }
+  .sum-line .sl-l { display:flex; align-items:center; gap:7px; color:#4a463d; }
+  .sum-line .sl-dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+  .sum-line .sl-r { display:flex; gap:9px; align-items:baseline; flex:0 0 auto; }
+  .sum-line .sl-kwh { font-size:.72rem; color:var(--charge-dim); font-weight:700; }
+  .sum-line .sl-cost { font-weight:800; color:#9a6a1a; }
+  .sum-line .sl-cost.zero { color:#b8b0a0; font-weight:600; }
+  .sum-day-empty { font-size:.78rem; color:#a89f8c; padding:4px 0; }
+  .export-btn { width:100%; background:var(--asphalt-soft); border:1px solid #3a4155;
+    color:var(--line); border-radius:12px; padding:12px; font-weight:800; font-family:inherit;
+    font-size:.85rem; cursor:pointer; margin-top:6px; }
+
+  /* ---- Andels-inställning ---- */
+  .share-box { background:var(--asphalt-soft); border:1.5px solid var(--line-dim);
+    border-radius:15px; padding:14px; margin:0 0 18px; }
+  .share-box h3 { font-size:.72rem; text-transform:uppercase; letter-spacing:.14em;
+    color:var(--line); margin-bottom:12px; }
+  .share-modes { display:flex; gap:7px; margin-bottom:12px; }
+  .share-mode { flex:1; text-align:center; background:var(--asphalt); border:1px solid #3a4155;
+    color:var(--paper-dim); border-radius:10px; padding:8px 4px; font-size:.74rem; font-weight:800;
+    cursor:pointer; }
+  .share-mode.active { background:var(--line); color:var(--asphalt); border-color:var(--line); }
+  .share-inputs { display:flex; gap:10px; align-items:flex-end; }
+  .share-inputs .si { flex:1; }
+  .share-inputs label { display:block; font-size:.64rem; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--paper-dim); margin-bottom:5px; font-weight:700; }
+  .share-inputs input { width:100%; background:var(--asphalt); border:1.5px solid #3a4155;
+    border-radius:10px; padding:10px; color:var(--paper); font-size:1rem; font-family:inherit;
+    text-align:center; font-weight:800; }
+  .share-result { margin-top:12px; text-align:center; font-size:.78rem; color:var(--paper-dim); }
+  .share-result b { color:var(--line); font-size:.95rem; }
+
+  .total-box .tb-val.mine { color:var(--charge); }
+
+  .add-stop-btn {
+    width:100%; margin-top:4px; background:transparent; border:2px dashed var(--line-dim);
+    color:var(--line); border-radius:14px; padding:13px; font-size:.9rem; font-weight:700;
+    cursor:pointer; font-family:inherit;
+  }
+
+  /* ---- Sammanfattningsrad ---- */
+  .day-summary { display:flex; gap:10px; margin:6px 4px 2px; flex-wrap:wrap; }
+  .sum-pill { font-size:.68rem; background:var(--asphalt-soft); border:1px solid #3a4155;
+    border-radius:20px; padding:4px 10px; color:var(--paper-dim); }
+  .sum-pill b { color:var(--line); }
+
+  /* ---- Bottennav ---- */
+  .fab-row {
+    position:fixed; bottom:0; left:0; right:0; z-index:50;
+    background:linear-gradient(0deg, var(--asphalt) 70%, transparent);
+    padding:12px 16px 18px; display:flex; gap:10px;
+  }
+  .fab {
+    flex:1; border:none; border-radius:14px; padding:13px; font-size:.86rem; font-weight:800;
+    font-family:inherit; cursor:pointer;
+  }
+  .fab-primary { background:var(--line); color:var(--asphalt); }
+  .fab-ghost { background:var(--asphalt-soft); color:var(--paper); border:1px solid #3a4155; flex:0 0 auto; padding:13px 16px; }
+
+  /* ---- Modal ---- */
+  .modal-bg {
+    position:fixed; inset:0; background:rgba(10,12,18,.72); z-index:100;
+    display:none; align-items:flex-end; justify-content:center;
+  }
+  .modal-bg.open { display:flex; }
+  .modal {
+    background:var(--paper); color:var(--ink); width:100%; max-width:520px;
+    border-radius:22px 22px 0 0; padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+    max-height:90vh; overflow-y:auto; animation:slideUp .22s ease;
+  }
+  @keyframes slideUp { from{ transform:translateY(30px); opacity:.6 } to{ transform:none; opacity:1 } }
+  .modal h3 { font-size:1.15rem; font-weight:900; color:var(--ink); margin-bottom:14px; }
+  .field { margin-bottom:13px; }
+  .field label { display:block; font-size:.72rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; color:#8a8272; margin-bottom:5px; }
+  .field input, .field textarea, .field select {
+    width:100%; border:1.5px solid var(--paper-dim); border-radius:11px; padding:11px 12px;
+    font-size:.95rem; font-family:inherit; background:#fff; color:var(--ink);
+  }
+  .field textarea { resize:vertical; min-height:60px; }
+  .type-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; }
+  .type-opt {
+    text-align:center; border:1.5px solid var(--paper-dim); border-radius:11px; padding:9px 3px;
+    cursor:pointer; font-size:.62rem; font-weight:700; color:#6a6252; background:#fff;
+  }
+  .type-opt .to-dot { width:14px; height:14px; border-radius:50%; margin:0 auto 5px; }
+  .type-opt.sel { border-color:var(--ink); background:var(--ink); color:#fff; }
+  .modal-actions { display:flex; gap:10px; margin-top:8px; }
+  .modal-actions button { flex:1; border:none; border-radius:12px; padding:13px; font-size:.9rem;
+    font-weight:800; font-family:inherit; cursor:pointer; }
+  .btn-save { background:var(--ink); color:var(--line); }
+  .btn-cancel { background:var(--paper-dim); color:#5a5546; }
+  .btn-del { background:var(--bed); color:#fff; margin-top:10px; width:100%; border:none;
+    border-radius:12px; padding:12px; font-weight:800; font-family:inherit; cursor:pointer; }
+
+  .toast {
+    position:fixed; bottom:96px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--line); padding:10px 18px; border-radius:24px;
+    font-size:.82rem; font-weight:700; z-index:200; opacity:0; transition:.25s; pointer-events:none;
+  }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="trip-title">Roadtrip 2026<span id="routeLabel">Halmstad → Efteling</span></div>
+  <div class="trip-meta" id="tripMeta"></div>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.66rem;color:var(--paper-dim)">
+    <span id="syncDot" style="width:9px;height:9px;border-radius:50%;background:var(--line);display:inline-block"></span>
+    Sparas automatiskt i molnet
+  </div>
+  <div class="view-tabs">
+    <div class="view-tab active" id="tabPlan">Plan</div>
+    <div class="view-tab" id="tabSummary">Sammanställning</div>
+  </div>
+</header>
+
+<div class="days-strip" id="daysStrip"></div>
+
+<main id="planView">
+  <div class="day-head">
+    <div class="day-head-l" id="dayHeadL"></div>
+    <button class="icon-btn danger" id="delDayBtn">Ta bort dag</button>
+  </div>
+  <div class="day-summary" id="daySummary"></div>
+  <div class="timeline" id="timeline"></div>
+  <button class="add-stop-btn" id="addStopBtn">+ Lägg till stopp</button>
+</main>
+
+<div class="summary-wrap" id="summaryView" style="display:none"></div>
+
+<div class="fab-row">
+  <button class="fab fab-primary" id="addStopFab">+ Nytt stopp</button>
+  <button class="fab fab-ghost" id="addDayFab">+ Dag</button>
+</div>
+
+<!-- Modal: stopp -->
+<div class="modal-bg" id="stopModal">
+  <div class="modal">
+    <h3 id="modalTitle">Nytt stopp</h3>
+    <div class="field">
+      <label>Typ av stopp</label>
+      <div class="type-grid" id="typeGrid">
+        <div class="type-opt" data-type="drive"><div class="to-dot" style="background:var(--sky)"></div>Kör</div>
+        <div class="type-opt" data-type="charge"><div class="to-dot" style="background:var(--charge)"></div>Ladda</div>
+        <div class="type-opt" data-type="hotel"><div class="to-dot" style="background:var(--bed)"></div>Hotell</div>
+        <div class="type-opt" data-type="sight"><div class="to-dot" style="background:var(--star)"></div>Stopp</div>
+        <div class="type-opt" data-type="food"><div class="to-dot" style="background:var(--food)"></div>Mat</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Namn</label>
+      <input id="fName" placeholder="t.ex. Fastned Wilp">
+    </div>
+    <div class="field">
+      <label>Tid (valfritt)</label>
+      <input id="fTime" placeholder="t.ex. 11:00">
+    </div>
+    <div class="field">
+      <label>Anteckning</label>
+      <textarea id="fNote" placeholder="Detaljer, laddeffekt, bokningstid..."></textarea>
+    </div>
+    <div class="field" id="kwhField">
+      <label>Laddat (kWh) — valfritt</label>
+      <input id="fKwh" type="number" inputmode="decimal" step="0.1" placeholder="t.ex. 62">
+    </div>
+    <div class="field">
+      <label>Kostnad (kr) — valfritt</label>
+      <input id="fCost" type="number" inputmode="decimal" step="0.01" placeholder="t.ex. 340">
+    </div>
+    <div class="field">
+      <label>Taggar (komma-separerade, valfritt)</label>
+      <input id="fTags" placeholder="t.ex. 350 kW, McDonald's, bokat">
+    </div>
+    <div class="field">
+      <label>Kartlänk / adress (valfritt)</label>
+      <input id="fMap" placeholder="Klistra in Google Maps-länk eller adress">
+    </div>
+    <div class="field" id="moveDayField" style="display:none">
+      <label>Flytta till dag</label>
+      <select id="fMoveDay"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelBtn">Avbryt</button>
+      <button class="btn-save" id="saveBtn">Spara</button>
+    </div>
+    <button class="btn-del" id="delStopBtn" style="display:none">Ta bort stopp</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TYPE_META = {
+  drive:  { label:'Kör',    badge:'b-drive',  cls:'t-drive'  },
+  charge: { label:'Ladda',  badge:'b-charge', cls:'t-charge' },
+  hotel:  { label:'Hotell', badge:'b-hotel',  cls:'t-hotel'  },
+  sight:  { label:'Stopp',  badge:'b-sight',  cls:'t-sight'  },
+  food:   { label:'Mat',    badge:'b-food',   cls:'t-food'   },
+};
+
+// -------- Förinlagd resa (bygger på det ni planerat) --------
+const SEED = {
+  route: 'Halmstad → Efteling',
+  days: [
+    { title:'Halmstad → Rendsburg', date:'Måndag 20 juli (VM-final!)', stops:[
+      { type:'drive', time:'', name:'Halmstad → Öresundsbron', note:'Start på resan. ØresundGo räcker för både Öresund och Stora Bält — ingen Brobizz behövs. Kolla att bilens regnr är kopplat till avtalet.', tags:['ØresundGo'], map:'', kwh:'', cost:'' },
+      { type:'charge', time:'', name:'Laddstopp Danmark', note:'Toppa upp längs vägen. Ha euro/kort redo. Max 2 tim körning mellan stopp med fullastad bil.', tags:['mobility+'], map:'', kwh:'', cost:'' },
+      { type:'sight', time:'', name:'Rendsburg — kanalen', note:'Mysig stad vid Nord-Ostsee-Kanal. Kul att se de stora fartygen glida förbi.', tags:[], map:'Rendsburg', kwh:'', cost:'' },
+      { type:'food', time:'21:00', name:'VM-final på Ruby Days', note:'Sportbar/restaurang med flera skärmar, visar fotboll live. Endast kontant — ha euro! Ring gärna först: +49 4331 4404949. Final 21:00 svensk tid, Spanien i final.', tags:['boka bord','kontant'], map:'Holsteiner Str. 10, 24768 Rendsburg', kwh:'', cost:'' },
+      { type:'hotel', time:'', name:'Hotell i Rendsburg', note:'Lägg in när bokat. Kolla om det finns laddning på plats.', tags:[], map:'', kwh:'', cost:'' },
+    ]},
+    { title:'Rendsburg → Osnabrück', date:'Tisdag 21 juli', stops:[
+      { type:'charge', time:'', name:'IONITY Quickborn', note:'Ca 1h15–1h30 från Rendsburg, innan Hamburg. 12 laddare, 350 kW. Ladda till ~80%. McDonald\'s bredvid.', tags:['350 kW','12 laddare'], map:'Auf dem Halenberg, 25451 Quickborn', kwh:'', cost:'' },
+      { type:'drive', time:'', name:'Genom Hamburg → Bremen', note:'Ca 1h30. Klarar hela vägen på laddningen från Quickborn.', tags:[], map:'', kwh:'', cost:'' },
+      { type:'sight', time:'', name:'Stopp i Bremen — Waterfront köpcentrum', note:'Bra ben-sträckare-stopp. Köpcentret Waterfront med Primark. Passa på att ladda samtidigt vid Audi charging hub bredvid.', tags:['Primark','shopping'], map:'Gröpelinger Fährweg 4, 28237 Bremen', kwh:'', cost:'' },
+      { type:'charge', time:'', name:'Audi charging hub, Waterfront', note:'4 överdäckade 300 kW-laddare, öppet dygnet runt, alla bilmärken. Ladda medan ni shoppar/fikar.', tags:['300 kW'], map:'Gröpelinger Fährweg 4, 28237 Bremen', kwh:'', cost:'' },
+      { type:'drive', time:'', name:'Bremen → Osnabrück', note:'Ca 12–13 mil via A1.', tags:[], map:'', kwh:'', cost:'' },
+      { type:'hotel', time:'', name:'Hotell i Osnabrück', note:'Kolla om hotellet har laddning. Om inte — ladda på EnBW Hansastraße innan avfärd imorgon.', tags:[], map:'Osnabrück', kwh:'', cost:'' },
+    ]},
+    { title:'Osnabrück → Tilburg', date:'Onsdag 22 juli (kan ändras)', stops:[
+      { type:'charge', time:'09:00', name:'EnBW Hansastraße (Osnabrück)', note:'Full laddning innan avfärd. EnBW:s egen station = billigast med mobility+. Plugga in medan ni packar bilen.', tags:['mobility+','full laddning'], map:'Hansastraße 81, 49090 Osnabrück', kwh:'', cost:'' },
+      { type:'charge', time:'~11:00', name:'Fastned Wilp (A1, vid Deventer)', note:'Ligger på 2-timmarspunkten från Osnabrück — perfekt för fullastad bil. Ladda upp ordentligt. ~8 mil kvar härifrån till Zeewolde.', tags:['Fastned','2-tim'], map:'Vundelaar A1, 7384 DZ Wilp', kwh:'', cost:'' },
+      { type:'food', time:'13:00', name:'Hans & Grietje Pannkakshus (Zeewolde)', note:'Magiskt "Efteling-stils" pannkakshus med rörliga golv, häxor och stort lekland. Kom en kvart före bordet! Bord bokat 13:00. Stor gratis utomhuslekpark.', tags:['bokat 13:00','lekpark'], map:'Sternweg 2A, 3898 LJ Zeewolde', kwh:'', cost:'' },
+      { type:'drive', time:'', name:'Vidare mot Tilburg', note:'Ca 1h30–1h45 (~14 mil) från Zeewolde. Efteling ligger ~15 min från Tilburg.', tags:[], map:'', kwh:'', cost:'' },
+      { type:'hotel', time:'', name:'Boende Tilburg / nära Efteling', note:'Lägg in när bokat. Kolla ombyggd tågvagn eller trädkoja i trakten (vipio.com).', tags:[], map:'Tilburg', kwh:'', cost:'' },
+    ]},
+  ]
+};
+
+// -------- Lagring (Firebase Realtime Database) --------
+const KEY = 'reseplan_v2';
+let state = null;
+let activeDay = 0;
+let editing = null; // {dayIdx, stopIdx} eller null
+let dbRef = null;
+let saveTimer = null;
+let applyingRemote = false;
+
+async function loadState(){
+  // Init Firebase
+  try {
+    firebase.initializeApp(firebaseConfig);
+  } catch(e){ /* redan initierad */ }
+  const db = firebase.database();
+  dbRef = db.ref('reseplaneraren/' + KEY);
+
+  // Hämta befintlig data en gång
+  let loaded = null;
+  try {
+    const snap = await dbRef.once('value');
+    loaded = snap.val();
+  } catch(e){ setSync('offline'); }
+
+  if(loaded && loaded.days){
+    state = loaded;
+  } else {
+    state = JSON.parse(JSON.stringify(SEED));
+  }
+  if(!state.share) state.share = { mode:'people', people:2, myPeople:1, percent:50 };
+
+  // Om molnet var tomt: skriv upp startplanen dit
+  if(!loaded || !loaded.days){ await pushNow(); }
+
+  // Lyssna på ändringar (t.ex. om du öppnar på annan enhet)
+  dbRef.on('value', (snap)=>{
+    const remote = snap.val();
+    if(!remote || !remote.days) return;
+    // undvik att skriva över medan man redigerar lokalt just nu
+    if(document.getElementById('stopModal').classList.contains('open')) return;
+    applyingRemote = true;
+    state = remote;
+    if(!state.share) state.share = { mode:'people', people:2, myPeople:1, percent:50 };
+    if(activeDay >= state.days.length) activeDay = Math.max(0, state.days.length-1);
+    render();
+    applyingRemote = false;
+    setSync('ok');
+  }, (err)=>{ setSync('offline'); });
+
+  setSync('ok');
+}
+
+async function pushNow(){
+  if(!dbRef) return;
+  try { await dbRef.set(state); setSync('ok'); }
+  catch(e){ setSync('offline'); }
+}
+
+// Debounce: spara max ~1 gång/sekund vid snabba ändringar
+async function saveState(silent){
+  if(applyingRemote) return;      // inte spara tillbaka det vi just tog emot
+  setSync('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    await pushNow();
+    if(!silent) toast('Sparat i molnet');
+  }, 600);
+}
+
+function setSync(status){
+  const el = document.getElementById('syncDot');
+  if(!el) return;
+  if(status==='ok'){ el.style.background='var(--charge)'; el.title='Sparat i molnet'; }
+  else if(status==='saving'){ el.style.background='var(--line)'; el.title='Sparar...'; }
+  else { el.style.background='var(--bed)'; el.title='Offline – ändringar sparas när nätet är tillbaka'; }
+}
+
+// -------- Rendering --------
+function render(){
+  renderMeta();
+  renderDaysStrip();
+  renderDay();
+  if(currentView==='summary') renderSummary();
+}
+function renderMeta(){
+  const nDays = state.days.length;
+  let nCharge=0, nHotel=0, nSight=0;
+  state.days.forEach(d=>d.stops.forEach(s=>{
+    if(s.type==='charge')nCharge++; if(s.type==='hotel')nHotel++; if(s.type==='sight')nSight++;
+  }));
+  document.getElementById('routeLabel').textContent = state.route;
+  document.getElementById('tripMeta').innerHTML =
+    `<span><b>${nDays}</b> dagar</span><span><b>${nCharge}</b> laddstopp</span>`+
+    `<span><b>${nHotel}</b> hotell</span><span><b>${nSight}</b> stopp</span>`;
+}
+function renderDaysStrip(){
+  const strip = document.getElementById('daysStrip');
+  strip.innerHTML='';
+  state.days.forEach((d,i)=>{
+    const c=document.createElement('div');
+    c.className='day-chip'+(i===activeDay?' active':'');
+    c.innerHTML=`<div class="dc-num">${i+1}</div><div class="dc-lbl">Dag</div>`;
+    c.onclick=()=>{ activeDay=i; render(); };
+    strip.appendChild(c);
+  });
+  const add=document.createElement('div');
+  add.className='day-chip add'; add.textContent='+';
+  add.onclick=addDay;
+  strip.appendChild(add);
+}
+function renderDay(){
+  const d = state.days[activeDay];
+  if(!d){ activeDay=0; return renderDay(); }
+  // rubrik (editerbar)
+  const hl = document.getElementById('dayHeadL');
+  hl.innerHTML='';
+  const t=document.createElement('input'); t.className='dtitle'; t.value=d.title; t.placeholder='Dagens rubrik';
+  t.onchange=()=>{ d.title=t.value; saveState(true); renderMeta(); };
+  const dt=document.createElement('input'); dt.className='ddate'; dt.value=d.date; dt.placeholder='Datum / dag';
+  dt.onchange=()=>{ d.date=dt.value; saveState(true); };
+  hl.appendChild(t); hl.appendChild(dt);
+
+  // summering
+  const sum=document.getElementById('daySummary');
+  const c=d.stops.filter(s=>s.type==='charge').length;
+  const h=d.stops.filter(s=>s.type==='hotel').length;
+  const st=d.stops.filter(s=>s.type==='sight').length;
+  sum.innerHTML =
+    `<div class="sum-pill"><b>${d.stops.length}</b> stopp</div>`+
+    (c?`<div class="sum-pill"><b>${c}</b> ladd</div>`:'')+
+    (h?`<div class="sum-pill"><b>${h}</b> hotell</div>`:'')+
+    (st?`<div class="sum-pill"><b>${st}</b> att göra</div>`:'');
+
+  // tidslinje
+  const tl=document.getElementById('timeline');
+  tl.innerHTML='';
+  if(d.stops.length===0){
+    tl.innerHTML='<div class="day-empty">Inga stopp än.<br>Tryck på "+ Nytt stopp" för att börja planera dagen.</div>';
+    return;
+  }
+  d.stops.forEach((s,idx)=>{
+    const m=TYPE_META[s.type]||TYPE_META.drive;
+    const el=document.createElement('div');
+    el.className='stop '+m.cls;
+    let tagsHtml='';
+    if(s.tags && s.tags.length) tagsHtml='<div class="stop-tags">'+s.tags.map(x=>`<span class="stop-tag">${esc(x)}</span>`).join('')+'</div>';
+    let statsHtml='';
+    const hasKwh = s.kwh!==undefined && s.kwh!=='' && s.kwh!==null;
+    const hasCost = s.cost!==undefined && s.cost!=='' && s.cost!==null;
+    if(hasKwh || hasCost){
+      let parts='';
+      if(hasKwh) parts+=`<span class="stat-chip stat-kwh">${fmtNum(s.kwh)} kWh</span>`;
+      if(hasCost) parts+=`<span class="stat-chip stat-cost">${fmtNum(s.cost)} kr</span>`;
+      if(hasKwh && hasCost && Number(s.kwh)>0){
+        parts+=`<span class="stat-chip stat-rate">${(Number(s.cost)/Number(s.kwh)).toFixed(2)} kr/kWh</span>`;
+      }
+      statsHtml=`<div class="stop-stats">${parts}</div>`;
+    }
+    let mapHtml='';
+    if(s.map){
+      const q=/^https?:\/\//i.test(s.map)?s.map:('https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(s.map));
+      mapHtml=`<a class="map" href="${q}" target="_blank" rel="noopener">📍 Karta</a>`;
+    }
+    el.innerHTML=
+      `<div class="stop-move">
+         <button class="move-btn" data-up="${idx}" ${idx===0?'disabled':''} aria-label="Flytta upp">▲</button>
+         <button class="move-btn" data-down="${idx}" ${idx===d.stops.length-1?'disabled':''} aria-label="Flytta ner">▼</button>
+       </div>
+       <div class="stop-top">
+         <span class="stop-badge ${m.badge}">${m.label}</span>
+         ${s.time?`<span class="stop-time">${esc(s.time)}</span>`:''}
+       </div>
+       <div class="stop-name">${esc(s.name||'(namnlöst stopp)')}</div>
+       ${s.note?`<div class="stop-note">${esc(s.note)}</div>`:''}
+       ${statsHtml}
+       ${tagsHtml}
+       <div class="stop-actions">${mapHtml}<button data-edit="${idx}">Redigera</button></div>`;
+    el.querySelector('[data-edit]').onclick=(e)=>{ e.stopPropagation(); openModal(activeDay, idx); };
+    el.querySelector('[data-up]').onclick=(e)=>{ e.stopPropagation(); moveStop(idx,-1); };
+    el.querySelector('[data-down]').onclick=(e)=>{ e.stopPropagation(); moveStop(idx,1); };
+    el.onclick=()=>openModal(activeDay, idx);
+    tl.appendChild(el);
+  });
+}
+
+async function moveStop(idx, dir){
+  const arr = state.days[activeDay].stops;
+  const j = idx+dir;
+  if(j<0 || j>=arr.length) return;
+  [arr[idx], arr[j]] = [arr[j], arr[idx]];
+  await saveState(true); render();
+}
+
+// -------- Modal-logik --------
+let selType='drive';
+function openModal(dayIdx, stopIdx){
+  editing = (stopIdx===undefined||stopIdx===null) ? {dayIdx, stopIdx:null} : {dayIdx, stopIdx};
+  const isNew = editing.stopIdx===null;
+  document.getElementById('modalTitle').textContent = isNew?'Nytt stopp':'Redigera stopp';
+  const s = isNew ? {type:'drive',name:'',time:'',note:'',tags:[],map:'',kwh:'',cost:''} : state.days[dayIdx].stops[stopIdx];
+  selType = s.type;
+  updateTypeGrid();
+  document.getElementById('fName').value = s.name||'';
+  document.getElementById('fTime').value = s.time||'';
+  document.getElementById('fNote').value = s.note||'';
+  document.getElementById('fKwh').value  = (s.kwh!==undefined?s.kwh:'')||'';
+  document.getElementById('fCost').value = (s.cost!==undefined?s.cost:'')||'';
+  document.getElementById('fTags').value = (s.tags||[]).join(', ');
+  document.getElementById('fMap').value  = s.map||'';
+  toggleKwhField();
+  // Flytta-till-dag: bara relevant för befintliga stopp
+  const moveField=document.getElementById('moveDayField');
+  const sel=document.getElementById('fMoveDay');
+  if(isNew){
+    moveField.style.display='none';
+  } else {
+    moveField.style.display='block';
+    sel.innerHTML='';
+    state.days.forEach((dd,i)=>{
+      const o=document.createElement('option');
+      o.value=i; o.textContent=`Dag ${i+1} — ${dd.title||'(utan namn)'}`;
+      if(i===dayIdx) o.selected=true;
+      sel.appendChild(o);
+    });
+  }
+  document.getElementById('delStopBtn').style.display = isNew?'none':'block';
+  document.getElementById('stopModal').classList.add('open');
+}
+function closeModal(){ document.getElementById('stopModal').classList.remove('open'); editing=null; }
+function updateTypeGrid(){
+  document.querySelectorAll('.type-opt').forEach(o=>{
+    o.classList.toggle('sel', o.dataset.type===selType);
+  });
+}
+function toggleKwhField(){
+  document.getElementById('kwhField').style.display = (selType==='charge')?'block':'none';
+}
+document.querySelectorAll('.type-opt').forEach(o=>{
+  o.onclick=()=>{ selType=o.dataset.type; updateTypeGrid(); toggleKwhField(); };
+});
+document.getElementById('saveBtn').onclick=async ()=>{
+  const s = {
+    type: selType,
+    name: document.getElementById('fName').value.trim(),
+    time: document.getElementById('fTime').value.trim(),
+    note: document.getElementById('fNote').value.trim(),
+    kwh:  document.getElementById('fKwh').value.trim(),
+    cost: document.getElementById('fCost').value.trim(),
+    tags: document.getElementById('fTags').value.split(',').map(x=>x.trim()).filter(Boolean),
+    map:  document.getElementById('fMap').value.trim(),
+  };
+  if(!s.name){ toast('Ge stoppet ett namn'); return; }
+  if(editing.stopIdx===null){
+    // Nytt stopp
+    state.days[editing.dayIdx].stops.push(s);
+  } else {
+    // Befintligt — kolla om det ska flyttas till annan dag
+    const targetDay = parseInt(document.getElementById('fMoveDay').value, 10);
+    if(!isNaN(targetDay) && targetDay!==editing.dayIdx){
+      state.days[editing.dayIdx].stops.splice(editing.stopIdx, 1);
+      state.days[targetDay].stops.push(s);
+      activeDay = targetDay;
+      await saveState(true);
+      closeModal(); render(); toast('Flyttat till dag '+(targetDay+1));
+      return;
+    }
+    state.days[editing.dayIdx].stops[editing.stopIdx] = s;
+  }
+  await saveState(true);
+  closeModal(); render(); toast('Sparat');
+};
+document.getElementById('cancelBtn').onclick=closeModal;
+document.getElementById('delStopBtn').onclick=async ()=>{
+  if(editing.stopIdx===null) return;
+  state.days[editing.dayIdx].stops.splice(editing.stopIdx,1);
+  await saveState(true); closeModal(); render(); toast('Stopp borttaget');
+};
+document.getElementById('stopModal').onclick=(e)=>{ if(e.target.id==='stopModal') closeModal(); };
+
+// -------- Dagar --------
+async function addDay(){
+  state.days.push({ title:'Ny dag', date:'', stops:[] });
+  activeDay = state.days.length-1;
+  await saveState(true); render(); toast('Dag tillagd');
+}
+document.getElementById('delDayBtn').onclick=async ()=>{
+  if(state.days.length<=1){ toast('Minst en dag krävs'); return; }
+  if(!confirm('Ta bort hela dagen med alla stopp?')) return;
+  state.days.splice(activeDay,1);
+  if(activeDay>=state.days.length) activeDay=state.days.length-1;
+  await saveState(true); render(); toast('Dag borttagen');
+};
+
+// -------- Knappar --------
+document.getElementById('addStopBtn').onclick=()=>openModal(activeDay,null);
+document.getElementById('addStopFab').onclick=()=>openModal(activeDay,null);
+document.getElementById('addDayFab').onclick=addDay;
+
+// -------- Vy-växling --------
+let currentView='plan';
+function setView(v){
+  currentView=v;
+  document.getElementById('tabPlan').classList.toggle('active', v==='plan');
+  document.getElementById('tabSummary').classList.toggle('active', v==='summary');
+  document.getElementById('planView').style.display = v==='plan'?'block':'none';
+  document.getElementById('summaryView').style.display = v==='summary'?'block':'none';
+  document.getElementById('daysStrip').style.display = v==='plan'?'flex':'none';
+  document.querySelector('.fab-row').style.display = v==='plan'?'flex':'none';
+  if(v==='summary') renderSummary();
+}
+document.getElementById('tabPlan').onclick=()=>setView('plan');
+document.getElementById('tabSummary').onclick=()=>setView('summary');
+
+function myFactor(){
+  const sh = state.share || {mode:'people',people:2,myPeople:1,percent:50};
+  if(sh.mode==='percent'){
+    const p = num(sh.percent); return p>0 ? p/100 : 0;
+  }
+  const tot = num(sh.people), mine = num(sh.myPeople);
+  return tot>0 ? mine/tot : 0;
+}
+function myShareLabel(){
+  const sh = state.share;
+  if(sh.mode==='percent') return num(sh.percent)+'%';
+  return `${num(sh.myPeople)} av ${num(sh.people)} pers`;
+}
+
+// -------- Summeringssida --------
+const CAT_INFO = {
+  charge:{label:'Laddning', color:'var(--charge)'},
+  hotel: {label:'Hotell',   color:'var(--bed)'},
+  food:  {label:'Mat',      color:'var(--food)'},
+  sight: {label:'Aktiviteter/stopp', color:'var(--star)'},
+  drive: {label:'Övrigt',   color:'var(--sky)'},
+};
+function renderSummary(){
+  const wrap=document.getElementById('summaryView');
+  let grandCost=0, grandKwh=0;
+  const catTotals={charge:{cost:0,kwh:0,n:0},hotel:{cost:0,n:0},food:{cost:0,n:0},sight:{cost:0,n:0},drive:{cost:0,n:0}};
+  state.days.forEach(d=>d.stops.forEach(s=>{
+    const c=num(s.cost), k=num(s.kwh);
+    grandCost+=c; grandKwh+=k;
+    const cat=catTotals[s.type]||catTotals.drive;
+    cat.cost+=c; cat.n+=(c>0||k>0?1:0);
+    if(s.type==='charge') cat.kwh+=k;
+  }));
+  const avgRate = grandKwh>0 ? (catTotals.charge.cost/grandKwh) : 0;
+  const factor = myFactor();
+  const myCost = grandCost * factor;
+
+  let html='';
+  // Andels-inställning
+  const sh = state.share;
+  html+=`<div class="share-box"><h3>Din andel av kostnaden</h3>
+    <div class="share-modes">
+      <div class="share-mode ${sh.mode==='people'?'active':''}" data-mode="people">Antal personer</div>
+      <div class="share-mode ${sh.mode==='percent'?'active':''}" data-mode="percent">Procent</div>
+    </div>`;
+  if(sh.mode==='people'){
+    html+=`<div class="share-inputs">
+      <div class="si"><label>Jag betalar för</label><input id="shMyPeople" type="number" inputmode="numeric" min="0" step="1" value="${esc(String(sh.myPeople))}"></div>
+      <div class="si"><label>av totalt (personer)</label><input id="shPeople" type="number" inputmode="numeric" min="1" step="1" value="${esc(String(sh.people))}"></div>
+    </div>`;
+  } else {
+    html+=`<div class="share-inputs">
+      <div class="si"><label>Jag betalar (%)</label><input id="shPercent" type="number" inputmode="decimal" min="0" max="100" step="1" value="${esc(String(sh.percent))}"></div>
+    </div>`;
+  }
+  html+=`<div class="share-result">Din andel: <b>${(factor*100).toFixed(factor*100%1?1:0)}%</b> av totalen (${esc(myShareLabel())})</div></div>`;
+
+  // Hero-totaler
+  html+=`<div class="totals-hero"><h2>Hela resan</h2><div class="totals-grid">
+    <div class="total-box"><div class="tb-val accent">${fmtNum(grandCost)} kr</div><div class="tb-lbl">Total kostnad</div></div>
+    <div class="total-box"><div class="tb-val mine">${fmtNum(myCost)} kr</div><div class="tb-lbl">Din del</div></div>
+    <div class="total-box"><div class="tb-val green">${fmtNum(grandKwh)} kWh</div><div class="tb-lbl">Total laddning</div></div>
+    <div class="total-box"><div class="tb-val">${avgRate>0?avgRate.toFixed(2):'–'} kr/kWh</div><div class="tb-lbl">Snittpris el</div></div>
+  </div></div>`;
+
+  // Per kategori
+  html+=`<div class="sum-section-title">Per kategori</div>`;
+  ['charge','hotel','food','sight','drive'].forEach(cat=>{
+    const t=catTotals[cat]; if(t.cost<=0 && !(cat==='charge'&&t.kwh>0)) return;
+    const info=CAT_INFO[cat];
+    html+=`<div class="cat-row"><div class="cr-l"><span class="cr-dot" style="background:${info.color}"></span>${info.label}
+      ${cat==='charge'&&t.kwh>0?`<span class="cr-sub">${fmtNum(t.kwh)} kWh</span>`:''}</div>
+      <div class="cr-val">${fmtNum(t.cost)} kr</div></div>`;
+  });
+
+  // Dag för dag, tillfälle för tillfälle
+  html+=`<div class="sum-section-title">Dag för dag</div>`;
+  state.days.forEach(d=>{
+    let dCost=0,dKwh=0;
+    d.stops.forEach(s=>{ dCost+=num(s.cost); dKwh+=num(s.kwh); });
+    html+=`<div class="sum-day">
+      <div class="sum-day-head">
+        <div><div class="sdh-title">${esc(d.title||'Dag')}</div>${d.date?`<div class="sdh-date">${esc(d.date)}</div>`:''}</div>
+        <div class="sum-day-total"><div class="sdt-cost">${fmtNum(dCost)} kr</div>${dCost>0?`<div class="sdt-kwh" style="color:var(--charge-dim)">din del ${fmtNum(dCost*factor)} kr</div>`:''}${dKwh>0?`<div class="sdt-kwh">${fmtNum(dKwh)} kWh</div>`:''}</div>
+      </div>`;
+    const logged=d.stops.filter(s=>num(s.cost)>0||num(s.kwh)>0);
+    if(logged.length===0){
+      html+=`<div class="sum-day-empty">Inget loggat än denna dag</div>`;
+    } else {
+      d.stops.forEach(s=>{
+        const c=num(s.cost),k=num(s.kwh);
+        if(c<=0 && k<=0) return;
+        const info=CAT_INFO[s.type]||CAT_INFO.drive;
+        html+=`<div class="sum-line">
+          <div class="sl-l"><span class="sl-dot" style="background:${info.color}"></span>${esc(s.name||info.label)}</div>
+          <div class="sl-r">${k>0?`<span class="sl-kwh">${fmtNum(k)} kWh</span>`:''}
+            <span class="sl-cost ${c>0?'':'zero'}">${c>0?fmtNum(c)+' kr':'–'}</span></div>
+        </div>`;
+      });
+    }
+    html+=`</div>`;
+  });
+
+  html+=`<button class="export-btn" id="exportBtn">📋 Kopiera sammanställning som text</button>`;
+  html+=`<button class="export-btn" id="resetBtn" style="border-color:var(--bed);color:var(--bed)">↺ Återställ till standardplanen</button>`;
+  wrap.innerHTML=html;
+  document.getElementById('exportBtn').onclick=exportText;
+
+  // Andels-läge (knappar)
+  wrap.querySelectorAll('.share-mode').forEach(b=>{
+    b.onclick=async ()=>{ state.share.mode=b.dataset.mode; await saveState(true); renderSummary(); };
+  });
+  // Andels-inputs (uppdatera utan att stänga tangentbord förrän man släpper)
+  const bind=(id,key)=>{
+    const el=document.getElementById(id); if(!el) return;
+    el.oninput=()=>{ state.share[key]=el.value; };
+    el.onchange=async ()=>{ state.share[key]=el.value; await saveState(true); renderSummary(); };
+  };
+  bind('shMyPeople','myPeople'); bind('shPeople','people'); bind('shPercent','percent');
+  document.getElementById('resetBtn').onclick=async ()=>{
+    if(!confirm('Ersätt allt med den förinlagda 3-dagarsplanen? Dina egna ändringar försvinner.')) return;
+    state=JSON.parse(JSON.stringify(SEED)); activeDay=0;
+    await saveState(true); setView('plan'); render(); toast('Återställd');
+  };
+}
+
+function exportText(){
+  let lines=['RESEPLAN — '+state.route,''];
+  let gc=0,gk=0;
+  state.days.forEach(d=>{
+    let dc=0,dk=0; d.stops.forEach(s=>{dc+=num(s.cost);dk+=num(s.kwh);});
+    lines.push('■ '+(d.title||'Dag')+(d.date?' ('+d.date+')':''));
+    d.stops.forEach(s=>{
+      const c=num(s.cost),k=num(s.kwh);
+      if(c<=0&&k<=0) return;
+      lines.push('   • '+(s.name||'')+(k>0?'  '+fmtNum(k)+' kWh':'')+(c>0?'  '+fmtNum(c)+' kr':''));
+    });
+    if(dc>0||dk>0) lines.push('   Dagssumma: '+fmtNum(dc)+' kr'+(dk>0?' / '+fmtNum(dk)+' kWh':''));
+    lines.push(''); gc+=dc; gk+=dk;
+  });
+  lines.push('TOTALT: '+fmtNum(gc)+' kr'+(gk>0?' / '+fmtNum(gk)+' kWh':''));
+  const f=myFactor();
+  if(f>0 && f<1) lines.push('DIN DEL ('+myShareLabel()+'): '+fmtNum(gc*f)+' kr');
+  const txt=lines.join('\n');
+  if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(()=>toast('Kopierat')).catch(()=>toast('Kunde inte kopiera')); }
+  else toast('Kopiering stöds ej här');
+}
+
+function num(v){ const n=parseFloat(v); return isFinite(n)?n:0; }
+function fmtNum(v){ const n=num(v); return (Math.round(n*100)/100).toLocaleString('sv-SE'); }
+
+// -------- Hjälp --------
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+let toastT;
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1600);
+}
+
+// -------- Start --------
+(async ()=>{ await loadState(); render(); })();
+</script>
+</body>
+</html>
